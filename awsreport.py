@@ -18,23 +18,52 @@ Options:
 
 import json
 import time
-from json import JSONDecodeError
-
 import plotly.graph_objs as go
 import plotly.offline as py
 import sys
 from plotly import tools
 from optparse import OptionParser
 
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
+from os.path import basename
+
 # Command to get the AWS statistics data.
-# aws cloudwatch get-metric-statistics --namespace AWS/EC2 --metric-name CPUUtilization --start-time 2018-10-01T23:00:00 --end-time 2018-10-26T23:00:00 --period 3600 --statistics Maximum --dimensions Name=InstanceId,Value=i-071afd3f185b5d7db > jsondatacpu.txt
-# aws cloudwatch get-metric-statistics --namespace AWS/EC2 --metric-name NetworkIn, --start-time 2018-10-01T23:00:00 --end-time 2018-10-30T23:00:00 --period 3600 --statistics Average --dimensions Name=InstanceId,Value=i-071afd3f185b5d7db > jsondatanetin.txt
-# aws cloudwatch get-metric-statistics --namespace AWS/EC2 --metric-name NetworkOut --start-time 2018-10-01T23:00:00 --end-time 2018-10-30T23:00:00 --period 3600 --statistics Average --dimensions Name=InstanceId,Value=i-071afd3f185b5d7db > jsondatanetout.txt
+# aws cloudwatch get-metric-statistics --namespace AWS/EC2 --metric-name CPUUtilization --start-time `date +%Y-%m-01T23:00:00` --end-time `date +%Y-%m-%dT23:00:00` --period 3600 --statistics Maximum --dimensions Name=InstanceId,Value=i-071afd3f185b5d7db > jsondatacpui-071afd3f185b5d7db.txt
+# aws cloudwatch get-metric-statistics --namespace AWS/EC2 --metric-name NetworkIn --start-time `date +%Y-%m-01T23:00:00` --end-time `date +%Y-%m-%dT23:00:00` --period 3600 --statistics Average --dimensions Name=InstanceId,Value=i-071afd3f185b5d7db > jsondatanetini-071afd3f185b5d7db.txt
+# aws cloudwatch get-metric-statistics --namespace AWS/EC2 --metric-name NetworkOut --start-time `date +%Y-%m-01T23:00:00` --end-time `date +%Y-%m-%dT23:00:00` --period 3600 --statistics Average --dimensions Name=InstanceId,Value=i-071afd3f185b5d7db > jsondatanetouti-071afd3f185b5d7db.txt
 
 
 INSTANCE_OS = ''
 CLIENT = ''
 CWD = '.'
+
+
+def send_email(send_from: str, subject: str, text: str,
+               send_to: list, file=None):
+    send_to = send_from if not send_to else send_to
+    msg = MIMEMultipart()
+    msg['From'] = send_from
+    if type(send_to) == list:
+        send_to = ', '.join(send_to)
+    msg['To'] = send_to
+    msg['Subject'] = subject
+    msg.attach(MIMEText(text))
+
+    attach = open(file, 'rb')
+    ext = file.split('.')[-1:]
+    print(ext)
+    attached_file = MIMEApplication(attach.read(), _subtype=ext)
+    attached_file.add_header('content-disposition', 'attachment', filename=basename(file))
+    msg.attach(attached_file)
+
+    smtp = smtplib.SMTP(host="smtp.gmail.com", port=587)
+    smtp.starttls()
+    smtp.login(GMAIL_USER, GMAIL_PASSWORD)
+    smtp.sendmail(send_from, send_to, msg.as_string())
+    smtp.close()
 
 
 def parse_data_to_json(file):
@@ -90,7 +119,7 @@ try:
                 cpu.append(row['Maximum'])
                 ctime.append(row['Timestamp'])
         count = count+1
-except JSONDecodeError as e:
+except json.JSONDecodeError as e:
     print("Something goes wrong %s" % e)
 
 #####
@@ -115,12 +144,6 @@ trace_net_out = go.Scatter(
     name='Network-Out'
 )
 
-# net_layout = go.Layout(title="<b>Window's Server 2016</b> <br> Network Utilization")
-# net_data = [trace_net_in, trace_net_out]
-
-# py.offline.plot({"data": data, "layout": layout}, auto_open=False, filename='envases-chart-net-report.html')
-# net_chart = py.plot({"data": data, "layout": layout})
-
 #####
 # CPU Utilization Chart
 #####
@@ -132,13 +155,6 @@ trace_cpu = go.Scatter(
     name='CPU-Percentage'
 )
 
-# cpu_layout = go.Layout(title="<b>Window's Server 2016</b> <br> CPU Utilization")
-# cpu_layout = dict(
-#     title="<b>Window's Server 2016</b> <br> CPU Utilization"
-# )
-
-# cpu_chart = py.plot({"data": data, "layout": layout})
-
 chart_report = tools.make_subplots(rows=2, cols=2, specs=[[{}, {}], [{'colspan': 2}, None]],
                                    subplot_titles=('<b>Network In</b>', '<b>Network Out</b>', '<b>CPU Utilization</b>'))
 chart_report.append_trace(trace_net_in, 1, 1)
@@ -148,5 +164,16 @@ chart_report.append_trace(trace_cpu, 2, 1)
 chart_report['layout'].update(showlegend=True,
                               title="<b> %s Resource Report </b> <br> <b> %s </b> <br> <i> %s </i>" % (
                                   options.client, options.os, options.id))
+file_name = options.path+options.client.replace(' ', '').lower()
+file_name = '%s-report.html' % file_name
+py.plot(chart_report, filename=file_name)
 
-py.plot(chart_report, filename='%s-report.html' % options.client.replace(' ', '').lower())
+###
+# Send email section
+###
+
+send_from = 'hector.guerrero@cibersys.com'
+subject = 'GDC REPORT - %s %s %s' % (options.client, options.os, options.id)
+text = 'HTML - %s %s %s' % (options.client, options.os, options.id)
+file = file_name
+send_email(send_from, subject, text, None, file)
