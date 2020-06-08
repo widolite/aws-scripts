@@ -21,6 +21,7 @@ import time
 import plotly.graph_objs as go
 import plotly.offline as py
 import sys
+import os
 from plotly import tools
 from optparse import OptionParser
 
@@ -39,6 +40,9 @@ from os.path import basename
 INSTANCE_OS = ''
 CLIENT = ''
 CWD = '.'
+GMAIL_USER =  os.getenv('GMAIL_USER')
+GMAIL_PASSWORD = os.getenv('GMAIL_PASSWORD')
+GMAIL_SEND_TO = os.getenv('GMAIL_SEND_TO')
 
 
 def send_email(send_from: str, subject: str, text: str,
